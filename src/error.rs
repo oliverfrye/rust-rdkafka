@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::ffi::{self, CStr};
 use std::fmt;
-use std::ptr;
+use std::ptr::{self, null_mut};
 use std::sync::Arc;
 
 use rdkafka_sys as rdsys;
@@ -56,6 +56,18 @@ unsafe impl Send for RDKafkaError {}
 unsafe impl Sync for RDKafkaError {}
 
 impl RDKafkaError {
+    /// Creates a new `RDKafkaError` by copying from the provided native `ptr`.
+    pub(crate) fn from_borrowed_ptr(ptr: *const rdsys::rd_kafka_error_t) -> RDKafkaError {
+        if ptr.is_null() {
+            return unsafe { Self::from_ptr(null_mut()) };
+        }
+
+        let code = unsafe { rdsys::rd_kafka_error_code(ptr) };
+        let fmt = unsafe { rdsys::rd_kafka_error_string(ptr) };
+
+        unsafe { Self::from_ptr(rdsys::rd_kafka_error_new(code, fmt)) }
+    }
+
     pub(crate) unsafe fn from_ptr(ptr: *mut rdsys::rd_kafka_error_t) -> RDKafkaError {
         RDKafkaError(NativePtr::from_ptr(ptr).map(Arc::new))
     }

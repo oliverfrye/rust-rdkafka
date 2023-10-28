@@ -30,7 +30,7 @@ run_with_valgrind() {
 
 git submodule update --init
 cargo test --no-run
-docker-compose up -d
+docker compose up -d
 
 # Run unit tests.
 
@@ -47,7 +47,7 @@ echo_good "*** Unit tests succeeded ***"
 
 # Run integration tests.
 
-echo_good "*** Run unit tests ***"
+echo_good "*** Run integration tests ***"
 for test_file in target/debug/deps/test_*
 do
     if [[ -x "$test_file" ]]

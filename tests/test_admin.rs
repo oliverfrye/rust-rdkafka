@@ -10,9 +10,10 @@ use rdkafka::admin::{
 };
 use rdkafka::client::DefaultClientContext;
 use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer, DefaultConsumerContext};
-use rdkafka::error::{KafkaError, RDKafkaErrorCode};
+use rdkafka::error::{IsError, KafkaError, RDKafkaErrorCode};
 use rdkafka::metadata::Metadata;
-use rdkafka::{ClientConfig, TopicPartitionList};
+use rdkafka::{ClientConfig, Offset, TopicPartitionList};
+use rdkafka_sys::RDKafkaConsumerGroupState;
 
 use crate::utils::*;
 
@@ -34,7 +35,7 @@ async fn create_consumer_group(consumer_group_name: &str) {
     let admin_client = create_admin_client();
     let topic_name = &rand_test_topic();
     let consumer: BaseConsumer = create_config()
-        .set("group.id", consumer_group_name.clone())
+        .set("group.id", consumer_group_name)
         .create()
         .expect("create consumer failed");
 
@@ -154,6 +155,172 @@ async fn test_topics() {
         assert_eq!(1, metadata_topic1.partitions().len());
         assert_eq!(3, metadata_topic2.partitions().len());
 
+        // Verify that records can be deleted from an empty topic
+        let mut offsets = TopicPartitionList::new();
+        offsets
+            .add_partition_offset(&name1, 0, Offset::Offset(0))
+            .expect("add partition offset failed");
+        let res = admin_client
+            .delete_records(&offsets, &opts)
+            .await
+            .expect("delete records failed");
+        assert_eq!(res, &[Ok(name1.clone())]);
+
+        // Verify that records can be deleted from a non-empty topic
+        let partition = 0;
+        let message_count = 10;
+        populate_topic(
+            &name1,
+            message_count,
+            &value_fn,
+            &key_fn,
+            Some(partition),
+            None,
+        )
+        .await;
+
+        let mut offsets = TopicPartitionList::new();
+        offsets
+            .add_partition_offset(&name1, partition, Offset::Offset(message_count.into()))
+            .expect("add partition offset failed");
+        let res = admin_client
+            .delete_records(&offsets, &opts)
+            .await
+            .expect("delete records failed");
+        assert_eq!(res, &[Ok(name1.clone())]);
+
+        // Verify that records can be deleted from multiple topics
+        populate_topic(
+            &name1,
+            message_count,
+            &value_fn,
+            &key_fn,
+            Some(partition),
+            None,
+        )
+        .await;
+        populate_topic(
+            &name2,
+            message_count,
+            &value_fn,
+            &key_fn,
+            Some(partition),
+            None,
+        )
+        .await;
+
+        let mut offsets = TopicPartitionList::new();
+        offsets
+            .add_partition_offset(&name1, partition, Offset::Offset(message_count.into()))
+            .expect("add partition offset1 failed");
+        offsets
+            .add_partition_offset(&name2, partition, Offset::Offset(message_count.into()))
+            .expect("add partition offset2 failed");
+        let results = admin_client
+            .delete_records(&offsets, &opts)
+            .await
+            .expect("delete records failed");
+
+        // Results can be in any order that is why we can't just say the following:
+        // assert_eq!(res, &[Ok(name1.clone()), Ok(name2.clone())]);
+
+        let mut found = false;
+        for result in &results {
+            if let Ok(name) = result {
+                if *name == name1 {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found);
+
+        let mut found = false;
+        for result in &results {
+            if let Ok(name) = result {
+                if *name == name2 {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found);
+
+        // Verify that mixed-success operations properly report the successful and
+        // failing operations.
+        populate_topic(
+            &name1,
+            message_count,
+            &value_fn,
+            &key_fn,
+            Some(partition),
+            None,
+        )
+        .await;
+        populate_topic(
+            &name2,
+            message_count,
+            &value_fn,
+            &key_fn,
+            Some(partition),
+            None,
+        )
+        .await;
+
+        let mut offsets = TopicPartitionList::new();
+        offsets
+            .add_partition_offset(&name1, partition, Offset::Offset(message_count.into()))
+            .expect("add partition offset1 failed");
+        let unknown_partition = 42;
+        offsets
+            .add_partition_offset(
+                &name2,
+                unknown_partition,
+                Offset::Offset(message_count.into()),
+            )
+            .expect("add partition offset2 failed");
+        let results = admin_client
+            .delete_records(&offsets, &opts)
+            .await
+            .expect("delete records failed");
+
+        // Results can be in any order that is why we can't just say the following:
+        // assert_eq!(res, &[Ok(name1.clone()), Err((name2.clone(), RDKafkaErrorCode::UnknownPartition))]);
+
+        let mut found = false;
+        for result in &results {
+            if let Ok(name) = result {
+                if *name == name1 {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found);
+
+        let mut found = false;
+        for result in &results {
+            if let Err((name, err)) = result {
+                if *name == name2 {
+                    assert_eq!(err, &RDKafkaErrorCode::UnknownPartition);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found);
+
+        // Verify that deleting records from a non-existent topic fails.
+        {
+            let nonexistent_topic_name = rand_test_topic();
+            let mut offsets = TopicPartitionList::new();
+            offsets
+                .add_partition_offset(&nonexistent_topic_name, 0, Offset::Offset(0))
+                .expect("add partition offset failed");
+            let res = admin_client.delete_records(&offsets, &opts).await;
+            assert_eq!(res, Err(KafkaError::AdminOp(RDKafkaErrorCode::NoEnt)));
+        }
+
         let res = admin_client
             .describe_configs(
                 &[
@@ -176,7 +343,7 @@ async fn test_topics() {
         };
         let expected_entry2 = ConfigEntry {
             name: "max.message.bytes".into(),
-            value: Some("1000012".into()),
+            value: Some("1048588".into()),
             source: ConfigSource::Default,
             is_read_only: false,
             is_default: true,
@@ -422,6 +589,90 @@ async fn test_configs() {
 #[tokio::test]
 async fn test_groups() {
     let admin_client = create_admin_client();
+
+    // Verify that a valid group can be listed.
+    {
+        let group_name = rand_test_group();
+        create_consumer_group(&group_name).await;
+        let res = admin_client
+            .list_consumer_groups(&AdminOptions::default())
+            .await;
+        match res {
+            Ok(results) => {
+                let mut found = false;
+                for result in results {
+                    match result {
+                        Ok(group) => {
+                            if group.group_id == group_name {
+                                found = true;
+                            }
+                        }
+                        Err(error) => panic!("failed to list consumer groups: {}", error),
+                    }
+                }
+                assert!(found);
+            }
+            Err(error) => panic!("failed to list consumer groups: {}", error),
+        }
+    }
+
+    // Verify that a valid group can be described.
+    {
+        let group_name = rand_test_group();
+        create_consumer_group(&group_name).await;
+        let res = admin_client
+            .describe_consumer_groups(&[&group_name], &AdminOptions::default())
+            .await;
+        match res {
+            Ok(results) => {
+                assert_eq!(1, results.len());
+                let group = &results[0];
+                assert_eq!(group_name, group.group_id);
+                assert!(!group.error.is_error());
+            }
+            Err(error) => panic!("failed to describe consumer group: {}", error),
+        }
+    }
+
+    // Verify that a valid and invalid group can be described, and that an
+    // appropriate state is returned.
+    {
+        let group_name = rand_test_group();
+        let unknown_group_name = rand_test_group();
+        create_consumer_group(&group_name).await;
+        let res = admin_client
+            .describe_consumer_groups(
+                &[&group_name, &unknown_group_name],
+                &AdminOptions::default(),
+            )
+            .await;
+        match res {
+            Ok(results) => {
+                assert_eq!(2, results.len());
+                for group in results {
+                    if group.group_id == group_name {
+                        assert_eq!(
+                            RDKafkaConsumerGroupState::RD_KAFKA_CONSUMER_GROUP_STATE_EMPTY,
+                            group.state
+                        );
+                        assert!(!group.error.is_error());
+                    } else if group.group_id == unknown_group_name {
+                        assert_eq!(
+                            RDKafkaConsumerGroupState::RD_KAFKA_CONSUMER_GROUP_STATE_DEAD,
+                            group.state
+                        );
+                        assert!(!group.error.is_error());
+                    } else {
+                        panic!(
+                            "describe resulted in unexpected consumer group: {}",
+                            group.group_id
+                        );
+                    }
+                }
+            }
+            Err(error) => panic!("failed to describe consumer group: {}", error),
+        }
+    }
 
     // Verify that a valid group can be deleted.
     {

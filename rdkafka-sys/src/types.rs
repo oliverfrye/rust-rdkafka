@@ -45,8 +45,17 @@ pub type RDKafkaMetadataPartition = bindings::rd_kafka_metadata_partition_t;
 /// Native rdkafka broker information.
 pub type RDKafkaMetadataBroker = bindings::rd_kafka_metadata_broker_t;
 
+// /// Native rdkafka consumer group description.
+pub type RDKafkaConsumerGroupDescription = bindings::rd_kafka_ConsumerGroupDescription_t;
+
+// /// Native rdkafka consumer group listing.
+pub type RDKafkaConsumerGroupListing = bindings::rd_kafka_ConsumerGroupListing_t;
+
 /// Native rdkafka consumer group metadata.
 pub type RDKafkaConsumerGroupMetadata = bindings::rd_kafka_consumer_group_metadata_t;
+
+/// Native rdkafka consumer group state.
+pub type RDKafkaConsumerGroupState = bindings::rd_kafka_consumer_group_state_t;
 
 /// Native rdkafka state.
 pub type RDKafkaState = bindings::rd_kafka_s;
@@ -72,11 +81,26 @@ pub type RDKafkaNewTopic = bindings::rd_kafka_NewTopic_t;
 /// Native rdkafka delete topic object.
 pub type RDKafkaDeleteTopic = bindings::rd_kafka_DeleteTopic_t;
 
+/// Native rdkafka delete records object.
+pub type RDKafkaDeleteRecords = bindings::rd_kafka_DeleteRecords_t;
+
 /// Native rdkafka delete group object.
 pub type RDKafkaDeleteGroup = bindings::rd_kafka_DeleteGroup_t;
 
+/// Native rdkafka alter consumer group object.
+pub type RDKafkaAlterConsumerGroupOffsets = bindings::rd_kafka_AlterConsumerGroupOffsets_t;
+
+/// Native rdkafka member assignment.
+pub type RDKafkaMemberAssignment = bindings::rd_kafka_MemberAssignment_t;
+
+/// Native rdkafka member description.
+pub type RDKafkaMemberDescription = bindings::rd_kafka_MemberDescription_t;
+
 /// Native rdkafka new partitions object.
 pub type RDKafkaNewPartitions = bindings::rd_kafka_NewPartitions_t;
+
+/// Native rdkafka node (broker) object.
+pub type RDKafkaNode = bindings::rd_kafka_Node_t;
 
 /// Native rdkafka config resource.
 pub type RDKafkaConfigResource = bindings::rd_kafka_ConfigResource_t;

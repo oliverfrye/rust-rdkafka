@@ -194,6 +194,16 @@ impl TopicPartitionList {
         unsafe { TopicPartitionList::from_ptr(ptr) }
     }
 
+	/// Creates a new `TopicPartitionList` by copying from the provided native
+	/// `ptr`.
+    pub(crate) fn from_borrowed_ptr(ptr: *const RDKafkaTopicPartitionList) -> TopicPartitionList {
+        assert!(!ptr.is_null());
+
+        let new_tpl = unsafe { rdsys::rd_kafka_topic_partition_list_copy(ptr) };
+
+        unsafe { TopicPartitionList::from_ptr(new_tpl) }
+    }
+
     /// Transforms a pointer to the native librdkafka RDTopicPartitionList into a
     /// managed `TopicPartitionList` instance.
     pub(crate) unsafe fn from_ptr(ptr: *mut RDKafkaTopicPartitionList) -> TopicPartitionList {
